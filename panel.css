@@ -1193,6 +1193,32 @@ pre {
     background-color: var(--hover-color);
 }
 
+/* Diff View Styles */
+.diff-add {
+    background-color: #e6ffec;
+    color: #24292e;
+    text-decoration: none;
+}
+
+.diff-remove {
+    background-color: #ffebe9;
+    color: #24292e;
+    text-decoration: none;
+}
+
+/* Dark mode adjustments for diff */
+@media (prefers-color-scheme: dark) {
+    .diff-add {
+        background-color: #1e4226;
+        color: #e6ffec;
+    }
+
+    .diff-remove {
+        background-color: #5c1d1d;
+        color: #ffebe9;
+    }
+}
+
 
 
 /* AI Explanation Styles */

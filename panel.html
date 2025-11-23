@@ -148,6 +148,11 @@
                                 <span id="res-time" class="time-badge"></span>
                                 <span id="res-size" class="size-badge"></span>
                             </div>
+                            <label class="diff-toggle"
+                                style="display: none; margin-left: 10px; font-size: 12px; align-items: center; gap: 4px;">
+                                <input type="checkbox" id="show-diff">
+                                <span>Diff View</span>
+                            </label>
                             <button id="copy-res-btn" class="icon-btn" title="Copy Response">
                                 <svg viewBox="0 0 24 24" width="16" height="16">
                                     <path
@@ -372,6 +377,7 @@
 
     <script src="html2canvas.min.js"></script>
     <script src="marked.min.js"></script>
+    <script src="diff.min.js"></script>
     <script src="syntax-highlight.js"></script>
     <script src="attack-modes.js"></script>
     <script src="panel.js"></script>

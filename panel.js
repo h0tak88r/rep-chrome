@@ -2366,6 +2366,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Close modal
         bulkConfigModal.style.display = 'none';
 
+        // Capture baseline response for diff
+        let baselineResponse = rawResponseDisplay.textContent || '';
+        const diffToggle = document.querySelector('.diff-toggle');
+        const showDiffCheckbox = document.getElementById('show-diff');
+        if (baselineResponse.trim()) {
+            diffToggle.style.display = 'flex';
+        }
+
         // Show Pane
         bulkReplayPane.style.display = 'flex';
         verticalResizeHandle.style.display = 'block';
@@ -2459,7 +2467,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             rawResponse += result.responseBody;
                         }
 
-                        rawResponseDisplay.innerHTML = highlightHTTP(rawResponse);
+                        // Check if diff view is enabled
+                        if (showDiffCheckbox && showDiffCheckbox.checked && baselineResponse.trim() && typeof Diff !== 'undefined') {
+                            rawResponseDisplay.innerHTML = renderDiff(baselineResponse, rawResponse);
+                        } else {
+                            rawResponseDisplay.innerHTML = highlightHTTP(rawResponse);
+                        }
                     }
                 }
             });
@@ -2822,6 +2835,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 explanationContent.innerHTML = `<div style="color: var(--error-color); padding: 20px;">Error: ${error.message}</div>`;
             }
         });
+    }
+
+    // Diff View Toggle Handler
+    const showDiffCheckbox = document.getElementById('show-diff');
+    if (showDiffCheckbox) {
+        showDiffCheckbox.addEventListener('change', () => {
+            // Re-render the currently selected result
+            const selectedRow = bulkResultsTable.querySelector('tr.selected');
+            if (selectedRow) {
+                selectedRow.click();
+            }
+        });
+    }
+
+    // Render Diff Function
+    function renderDiff(baseline, current) {
+        if (typeof Diff === 'undefined') {
+            return highlightHTTP(current);
+        }
+
+        const diff = Diff.diffLines(baseline, current);
+        let html = '<pre style="margin: 0; padding: 10px; font-family: monospace; font-size: 12px; line-height: 1.5;">';
+
+        diff.forEach(part => {
+            const lines = part.value.split('\n');
+            lines.forEach((line, idx) => {
+                if (idx === lines.length - 1 && line === '') return; // Skip trailing empty line
+
+                if (part.added) {
+                    html += `<div class="diff-add">+ ${escapeHtml(line)}</div>`;
+                } else if (part.removed) {
+                    html += `<div class="diff-remove">- ${escapeHtml(line)}</div>`;
+                } else {
+                    html += `<div>  ${escapeHtml(line)}</div>`;
+                }
+            });
+        });
+
+        html += '</pre>';
+        return html;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
 });
