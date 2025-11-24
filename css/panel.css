@@ -1505,3 +1505,116 @@ pre {
     background-color: #ffebe9;
     color: #24292e;
 }
+
+/* Secrets Scanner */
+.secrets-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.secrets-table th,
+.secrets-table td {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-color);
+    text-align: left;
+    font-size: 12px;
+}
+
+.secrets-table th {
+    background: var(--sidebar-bg);
+    position: sticky;
+    top: 0;
+}
+
+.secret-type {
+    font-weight: 600;
+    color: var(--accent-color);
+    background: rgba(138, 180, 248, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.secret-match {
+    font-family: 'Consolas', 'Monaco', monospace;
+    background: rgba(242, 139, 130, 0.1);
+    color: var(--error-color);
+    padding: 2px 4px;
+    border-radius: 3px;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.secret-file {
+    color: #9aa0a6;
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Light theme overrides */
+.light-theme .secret-type {
+    background: #e8f0fe;
+    color: #1967d2;
+}
+
+.light-theme .secret-match {
+    background: #fce8e6;
+    color: #c5221f;
+}
+
+.light-theme .secret-file {
+    color: #5f6368;
+}
+
+.confidence-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.confidence-badge.high {
+    background: rgba(129, 201, 149, 0.2);
+    color: #81c995;
+}
+
+.confidence-badge.medium {
+    background: rgba(253, 214, 99, 0.2);
+    color: #fdd663;
+}
+
+.confidence-badge.low {
+    background: rgba(242, 139, 130, 0.2);
+    color: #f28b82;
+}
+
+/* Light theme overrides */
+.light-theme .confidence-badge.high {
+    background: #e6ffec;
+    color: #137333;
+}
+
+.light-theme .confidence-badge.medium {
+    background: #fef7e0;
+    color: #b06000;
+}
+
+.light-theme .confidence-badge.low {
+    background: #fce8e6;
+    color: #c5221f;
+}
+
+.secret-file a {
+    color: inherit;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.secret-file a:hover {
+    text-decoration: underline;
+    color: var(--accent-color);
+}
