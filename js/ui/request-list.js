@@ -4,7 +4,7 @@ import { formatTime } from '../core/utils/format.js';
 import { escapeHtml } from '../core/utils/dom.js';
 import { getHostname } from '../core/utils/network.js';
 import { events, EVENT_NAMES } from '../core/events.js';
-import { toggleStar, toggleGroupStar, setTimelineFilter, setRequestColor } from './request-actions.js';
+import { toggleStar, toggleGroupStar, deleteGroup, setTimelineFilter, setRequestColor } from './request-actions.js';
 
 const STAR_ICON_FILLED = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>';
 const STAR_ICON_OUTLINE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.01 4.38.38-3.32 2.88 1 4.28L12 15.4z"/></svg>';
@@ -32,6 +32,9 @@ export function createPageGroup(pageUrl) {
         <button class="group-star-btn ${state.starredPages.has(pageHostname) ? 'active' : ''}" title="${state.starredPages.has(pageHostname) ? 'Unstar Group' : 'Star Group'}">
             ${state.starredPages.has(pageHostname) ? STAR_ICON_FILLED : STAR_ICON_OUTLINE}
         </button>
+        <button class="group-delete-btn" title="Delete Group">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+        </button>
     `;
 
     const content = document.createElement('div');
@@ -39,7 +42,7 @@ export function createPageGroup(pageUrl) {
 
     header.addEventListener('click', (e) => {
         // Don't toggle if clicking on buttons
-        if (e.target.closest('.group-ai-btn') || e.target.closest('.group-star-btn')) return;
+        if (e.target.closest('.group-ai-btn') || e.target.closest('.group-star-btn') || e.target.closest('.group-delete-btn')) return;
 
         group.classList.toggle('expanded');
     });
@@ -75,6 +78,12 @@ export function createPageGroup(pageUrl) {
         toggleGroupStar('page', pageHostname, starBtn);
     });
 
+    const deleteBtn = header.querySelector('.group-delete-btn');
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteGroup('page', pageHostname, group);
+    });
+
     group.appendChild(header);
     group.appendChild(content);
 
@@ -96,12 +105,18 @@ export function createDomainGroup(hostname, isThirdParty = false) {
         <button class="group-star-btn ${state.starredDomains.has(hostname) ? 'active' : ''}" title="${state.starredDomains.has(hostname) ? 'Unstar Group' : 'Star Group'}">
             ${state.starredDomains.has(hostname) ? STAR_ICON_FILLED : STAR_ICON_OUTLINE}
         </button>
+        <button class="group-delete-btn" title="Delete Group">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+        </button>
     `;
 
     const content = document.createElement('div');
     content.className = 'domain-content';
 
-    header.addEventListener('click', () => {
+    header.addEventListener('click', (e) => {
+        // Don't toggle if clicking on buttons
+        if (e.target.closest('.group-star-btn') || e.target.closest('.group-delete-btn')) return;
+        
         group.classList.toggle('expanded');
         const toggle = header.querySelector('.group-toggle');
         toggle.textContent = group.classList.contains('expanded') ? '▼' : '▶';
@@ -111,6 +126,12 @@ export function createDomainGroup(hostname, isThirdParty = false) {
     starBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         toggleGroupStar('domain', hostname, starBtn);
+    });
+
+    const deleteBtn = header.querySelector('.group-delete-btn');
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteGroup('domain', hostname, group);
     });
 
     group.appendChild(header);

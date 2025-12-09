@@ -2410,6 +2410,37 @@ pre {
     color: #f4b400;
 }
 
+/* Group Delete Button */
+.group-delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 2px;
+    margin-left: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.5;
+    transition: opacity 0.2s, color 0.2s;
+}
+
+.group-delete-btn:hover {
+    opacity: 1;
+    color: #ff6b6b;
+}
+
+.group-delete-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Group deletion animation */
+.page-group,
+.domain-group {
+    transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
 /* Domain Filter Dropdown */
 .domain-filter-select {
     padding: 6px 10px;

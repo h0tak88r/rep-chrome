@@ -81,6 +81,99 @@ export function toggleGroupStar(type, hostname, btn) {
     events.emit(EVENT_NAMES.REQUEST_FILTERED);
 }
 
+export function deleteGroup(type, hostname, groupElement) {
+    const isPage = type === 'page';
+
+    // Find and remove all requests belonging to this group
+    const requestsToRemove = [];
+    state.requests.forEach((req, index) => {
+        const reqPageHostname = getHostname(req.pageUrl || req.request.url);
+        const reqHostname = getHostname(req.request.url);
+
+        let shouldRemove = false;
+        if (isPage) {
+            // For page groups, remove requests that belong to this page
+            // This includes both first-party (same hostname) and third-party requests
+            if (reqPageHostname === hostname) shouldRemove = true;
+        } else {
+            // For domain groups, remove requests from this domain
+            if (reqHostname === hostname) shouldRemove = true;
+        }
+
+        if (shouldRemove) {
+            requestsToRemove.push(index);
+        }
+    });
+
+    // Remove requests in reverse order to maintain correct indices
+    requestsToRemove.reverse().forEach(index => {
+        state.requests.splice(index, 1);
+    });
+
+    // Clear starred state for this group
+    if (isPage) {
+        state.starredPages.delete(hostname);
+        state.domainsWithAttackSurface.delete(hostname);
+        // Also clear attack surface categories for requests in this page
+        Object.keys(state.attackSurfaceCategories).forEach(key => {
+            const reqIndex = parseInt(key);
+            if (reqIndex < state.requests.length) {
+                const req = state.requests[reqIndex];
+                if (req && getHostname(req.pageUrl || req.request.url) === hostname) {
+                    delete state.attackSurfaceCategories[key];
+                }
+            } else {
+                // Request was deleted, remove its category entry
+                delete state.attackSurfaceCategories[key];
+            }
+        });
+    } else {
+        state.starredDomains.delete(hostname);
+        state.domainsWithAttackSurface.delete(hostname);
+        // Clear attack surface categories for requests from this domain
+        Object.keys(state.attackSurfaceCategories).forEach(key => {
+            const reqIndex = parseInt(key);
+            if (reqIndex < state.requests.length) {
+                const req = state.requests[reqIndex];
+                if (req && getHostname(req.request.url) === hostname) {
+                    delete state.attackSurfaceCategories[key];
+                }
+            } else {
+                delete state.attackSurfaceCategories[key];
+            }
+        });
+    }
+
+    // Clear selected request if it was deleted
+    // Check if selectedRequest was one of the removed requests
+    const selectedIndex = state.requests.indexOf(state.selectedRequest);
+    if (state.selectedRequest && (selectedIndex === -1 || requestsToRemove.includes(selectedIndex))) {
+        state.selectedRequest = null;
+    }
+
+    // Animate fade-out and remove the group element from DOM
+    if (groupElement) {
+        groupElement.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
+        groupElement.style.opacity = '0';
+        groupElement.style.transform = 'translateX(-10px)';
+        
+        // Remove from DOM after animation completes
+        setTimeout(() => {
+            if (groupElement.parentNode) {
+                groupElement.parentNode.removeChild(groupElement);
+            }
+        }, 300);
+    }
+
+    // Emit event to refresh the entire list
+    events.emit(EVENT_NAMES.REQUEST_FILTERED);
+    
+    // Also emit UI clear event to reset editors if needed
+    if (state.selectedRequest === null) {
+        events.emit('ui:clear-all');
+    }
+}
+
 export function toggleAllGroups() {
     const requestList = getRequestList();
     if (!requestList) return;
