@@ -3,7 +3,8 @@ import { state, addRequest } from './core/state.js';
 import {
     initUI, elements, renderRequestItem, filterRequests, updateHistoryButtons,
     clearAllRequestsUI, setupResizeHandle, setupSidebarResize, setupContextMenu,
-    setupUndoRedo, captureScreenshot, exportRequests, importRequests, toggleAllGroups
+    setupUndoRedo, captureScreenshot, exportRequests, importRequests, toggleAllGroups,
+    toggleAllObjects
 } from './ui/main-ui.js';
 import { setupNetworkListener } from './network/capture.js';
 import { setupBulkReplay } from './features/bulk-replay/index.js';
@@ -123,6 +124,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Toggle Groups
     if (elements.toggleGroupsBtn) {
         elements.toggleGroupsBtn.addEventListener('click', toggleAllGroups);
+    }
+
+    // Toggle Objects (for JSON responses)
+    if (elements.toggleObjectsBtn) {
+        elements.toggleObjectsBtn.addEventListener('click', toggleAllObjects);
     }
 
     // Export/Import

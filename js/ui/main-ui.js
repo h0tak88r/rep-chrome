@@ -35,6 +35,7 @@ export function initUI() {
     elements.diffToggle = document.querySelector('.diff-toggle');
     elements.showDiffCheckbox = document.getElementById('show-diff');
     elements.toggleGroupsBtn = document.getElementById('toggle-groups-btn');
+    elements.toggleObjectsBtn = document.getElementById('toggle-objects-btn');
     elements.colorFilterBtn = document.getElementById('color-filter-btn');
 
     // Color Filter Logic
@@ -432,4 +433,4 @@ function setupEventListeners() {
 export { renderRequestList, renderRequestItem, filterRequests, createRequestItemElement, createPageGroup, createDomainGroup } from './request-list.js';
 export { selectRequest, switchRequestView, switchResponseView, toggleLayout } from './request-editor.js';
 export { toggleStar, toggleGroupStar, setTimelineFilter, toggleAllGroups, getFilteredRequests, setRequestColor } from './request-actions.js';
-export { updateHistoryButtons, clearAllRequestsUI, setupResizeHandle, setupSidebarResize, setupContextMenu, setupUndoRedo, captureScreenshot, exportRequests, importRequests } from './ui-utils.js';
+export { updateHistoryButtons, clearAllRequestsUI, setupResizeHandle, toggleAllObjects, setupSidebarResize, setupContextMenu, setupUndoRedo, captureScreenshot, exportRequests, importRequests } from './ui-utils.js';

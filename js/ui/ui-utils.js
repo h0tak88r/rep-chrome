@@ -17,6 +17,37 @@ export function updateHistoryButtons() {
     }
 }
 
+export function toggleAllObjects() {
+    const container = document.querySelector('.json-formatter-container');
+    if (!container || !container.innerHTML) return;
+
+    const nodes = container.querySelectorAll('.json-object, .json-array');
+    if (nodes.length == 0) return;
+
+    const hasAnyExpanded = Array.from(nodes).slice(1).some(node =>
+        node.classList.contains('expanded')
+    );
+
+    nodes.forEach((node, index) => {
+        if (index === 0) {
+            // Always keep root expanded (looks better)
+            node.classList.remove('collapsed');
+            node.classList.add('expanded');
+        } else {
+            // Toggle other nodes
+            if (hasAnyExpanded) {
+                node.classList.remove('expanded');
+                node.classList.add('collapsed');
+            } else {
+                node.classList.remove('collapsed');
+                node.classList.add('expanded');
+            }
+        }
+    });
+
+}
+
+
 export function clearAllRequestsUI() {
     clearRequests();
     const requestList = document.getElementById('request-list');
