@@ -309,13 +309,16 @@ export function setupContextMenu() {
         }
     });
 
-    // Handle menu item clicks
+    // Handle menu item clicks (encode/decode actions only).
+    // The "Mark Payload (§)" action is handled in the Bulk Replay feature,
+    // so we explicitly ignore it here to avoid clearing the stored selection
+    // before the bulk replay handler runs.
     elements.contextMenu.addEventListener('click', (e) => {
         const item = e.target.closest('.context-menu-item[data-action]');
         if (item) {
             e.stopPropagation();
             const action = item.dataset.action;
-            if (action) {
+            if (action && action !== 'mark-payload') {
                 handleEncodeDecode(action);
                 hideContextMenu();
             }
