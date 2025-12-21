@@ -2474,6 +2474,243 @@ pre {
     color: #c5221f;
 }
 
+/* Risk Badges */
+.risk-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.risk-badge.risk-high {
+    background: rgba(242, 139, 130, 0.2);
+    color: #f28b82;
+}
+
+.risk-badge.risk-medium {
+    background: rgba(253, 214, 99, 0.2);
+    color: #fdd663;
+}
+
+.risk-badge.risk-low {
+    background: rgba(174, 174, 174, 0.2);
+    color: #aeaeae;
+}
+
+.light-theme .risk-badge.risk-high {
+    background: #fce8e6;
+    color: #c5221f;
+}
+
+.light-theme .risk-badge.risk-medium {
+    background: #fef7e0;
+    color: #b06000;
+}
+
+.light-theme .risk-badge.risk-low {
+    background: #f1f3f4;
+    color: #5f6368;
+}
+
+/* Location Badges */
+.location-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.location-badge.location-query {
+    background: rgba(129, 201, 149, 0.15);
+    color: #81c995;
+}
+
+.location-badge.location-body {
+    background: rgba(253, 214, 99, 0.15);
+    color: #fdd663;
+}
+
+.location-badge.location-header {
+    background: rgba(138, 180, 248, 0.15);
+    color: #8ab4f8;
+}
+
+.location-badge.location-path {
+    background: rgba(225, 177, 255, 0.15);
+    color: #e1b1ff;
+}
+
+.light-theme .location-badge.location-query {
+    background: #e6ffec;
+    color: #137333;
+}
+
+.light-theme .location-badge.location-body {
+    background: #fef7e0;
+    color: #b06000;
+}
+
+.light-theme .location-badge.location-header {
+    background: #e8f0fe;
+    color: #1967d2;
+}
+
+.light-theme .location-badge.location-path {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+
+/* Parameter Groups Table */
+.parameter-groups-table {
+    width: 100%;
+}
+
+.endpoint-group-row {
+    cursor: pointer;
+    background-color: var(--sidebar-bg);
+    transition: background-color 0.2s;
+}
+
+.endpoint-group-row:hover {
+    background-color: var(--hover-bg);
+}
+
+.endpoint-group-row.expanded {
+    background-color: rgba(138, 180, 248, 0.1);
+}
+
+.endpoint-expand-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.expand-toggle {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: var(--text-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.expand-toggle:hover {
+    background-color: var(--hover-bg);
+    color: var(--accent-color);
+}
+
+.expand-icon {
+    transition: transform 0.2s ease;
+    transform: rotate(0deg);
+    color: var(--text-color);
+}
+
+.endpoint-group-row.expanded .expand-icon {
+    transform: rotate(90deg);
+}
+
+.parameter-row {
+    background-color: rgba(138, 180, 248, 0.05);
+}
+
+.parameter-row:hover {
+    background-color: rgba(138, 180, 248, 0.1);
+}
+
+.parameter-indent {
+    padding-left: 32px !important;
+}
+
+.parameter-name {
+    color: var(--text-color);
+}
+
+.params-count {
+    font-size: 12px;
+    color: var(--text-color);
+    opacity: 0.8;
+}
+
+.high-risk-indicator {
+    margin-left: 8px;
+    font-size: 11px;
+    color: #f28b82;
+    font-weight: 600;
+}
+
+.light-theme .endpoint-group-row {
+    background-color: #f8f9fa;
+}
+
+.light-theme .endpoint-group-row:hover {
+    background-color: #e8eaed;
+}
+
+.light-theme .endpoint-group-row.expanded {
+    background-color: #e8f0fe;
+}
+
+.light-theme .parameter-row {
+    background-color: #f8f9fa;
+}
+
+.light-theme .parameter-row:hover {
+    background-color: #e8eaed;
+}
+
+/* Copy cURL Button */
+.copy-curl-btn {
+    background: none;
+    border: none;
+    padding: 6px;
+    cursor: pointer;
+    color: var(--text-color);
+    opacity: 0.7;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.copy-curl-btn:hover {
+    opacity: 1;
+    background-color: var(--hover-bg);
+    color: var(--accent-color);
+}
+
+.copy-curl-btn:active {
+    transform: scale(0.95);
+}
+
+.copy-curl-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.copy-curl-btn.copied {
+    color: var(--success-color);
+    opacity: 1;
+}
+
+.light-theme .copy-curl-btn {
+    opacity: 0.8;
+}
+
+.light-theme .copy-curl-btn:hover {
+    background-color: #e8eaed;
+    color: #1967d2;
+}
+
 .secret-file a {
     color: inherit;
     text-decoration: none;

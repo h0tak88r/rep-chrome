@@ -1,6 +1,99 @@
 // Extractor UI Module
 import { escapeHtml, copyToClipboard } from '../../core/utils/dom.js';
 
+// Helper to escape strings for single-quoted shell contexts (curl)
+function shellEscapeSingle(str) {
+    if (str == null) return '';
+    // Replace ' with '\'' pattern for POSIX shells
+    return String(str).replace(/'/g, `'\\''`);
+}
+
+// Generate curl command from endpoint and parameters
+function generateCurlFromParameters(group) {
+    const method = (group.method || 'GET').toUpperCase();
+    const endpoint = group.endpoint || '';
+    const sourceFile = group.sourceFile || '';
+    
+    // Construct full URL from endpoint path
+    let fullUrl = endpoint;
+    try {
+        // If endpoint is relative, use source file's origin
+        if (endpoint.startsWith('/')) {
+            const sourceUrl = new URL(sourceFile);
+            fullUrl = `${sourceUrl.origin}${endpoint}`;
+        } else if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
+            // Relative path without leading slash
+            const sourceUrl = new URL(sourceFile);
+            fullUrl = `${sourceUrl.origin}/${endpoint}`;
+        }
+    } catch (e) {
+        // If URL parsing fails, try to extract origin from sourceFile manually
+        if (sourceFile) {
+            const match = sourceFile.match(/^(https?:\/\/[^\/]+)/);
+            if (match) {
+                const origin = match[1];
+                if (endpoint.startsWith('/')) {
+                    fullUrl = `${origin}${endpoint}`;
+                } else {
+                    fullUrl = `${origin}/${endpoint}`;
+                }
+            }
+        }
+    }
+    
+    // Build base curl command
+    const parts = [`curl '${shellEscapeSingle(fullUrl)}'`];
+    
+    if (method !== 'GET') {
+        parts.push(`-X ${method}`);
+    }
+    
+    // Separate parameters by location
+    const queryParams = [];
+    const bodyParams = {};
+    const headerParams = {};
+    
+    group.params.forEach(param => {
+        const paramName = param.name || '';
+        const paramValue = 'VALUE'; // Placeholder - user will need to replace
+        
+        if (param.location === 'query') {
+            queryParams.push(`${encodeURIComponent(paramName)}=${encodeURIComponent(paramValue)}`);
+        } else if (param.location === 'body') {
+            bodyParams[paramName] = paramValue;
+        } else if (param.location === 'header') {
+            headerParams[paramName] = paramValue;
+        }
+    });
+    
+    // Add query parameters to URL
+    if (queryParams.length > 0) {
+        const urlObj = new URL(fullUrl);
+        queryParams.forEach(qp => {
+            const [key, value] = qp.split('=');
+            urlObj.searchParams.append(decodeURIComponent(key), decodeURIComponent(value));
+        });
+        parts[0] = `curl '${shellEscapeSingle(urlObj.toString())}'`;
+    }
+    
+    // Add headers
+    Object.entries(headerParams).forEach(([key, value]) => {
+        parts.push(`-H '${shellEscapeSingle(`${key}: ${value}`)}'`);
+    });
+    
+    // Add body (as JSON for body parameters)
+    if (Object.keys(bodyParams).length > 0 && (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE')) {
+        const jsonBody = JSON.stringify(bodyParams, null, 2);
+        parts.push(`--data-raw '${shellEscapeSingle(jsonBody)}'`);
+        // Add Content-Type header if not already present
+        if (!Object.keys(headerParams).some(k => k.toLowerCase() === 'content-type')) {
+            parts.push(`-H 'Content-Type: application/json'`);
+        }
+    }
+    
+    return parts.join(' \\\n  ');
+}
+
 export function initExtractorUI() {
     const extractorBtn = document.getElementById('extractor-btn');
     const extractorModal = document.getElementById('extractor-modal');
@@ -16,10 +109,12 @@ export function initExtractorUI() {
     // Results containers
     const secretsResults = document.getElementById('secrets-results');
     const endpointsResults = document.getElementById('endpoints-results');
+    const parametersResults = document.getElementById('parameters-results');
 
     // State
     let currentSecretResults = [];
     let currentEndpointResults = [];
+    let currentParameterResults = [];
     let currentResponseSearchResults = [];
     let activeTab = 'secrets';
     let scannedDomains = new Set();
@@ -29,7 +124,13 @@ export function initExtractorUI() {
     const ITEMS_PER_PAGE = 10;
     let currentSecretsPage = 1;
     let currentEndpointsPage = 1;
+    let currentParametersPage = 1;
     let currentResponseSearchPage = 1;
+
+    // Sort State
+    let secretsSort = { column: null, direction: 'asc' };
+    let endpointsSort = { column: null, direction: 'asc' };
+    let parametersSort = { column: null, direction: 'asc' };
 
     // Helper: Extract domain from URL
     function getDomainFromUrl(url) {
@@ -78,17 +179,91 @@ export function initExtractorUI() {
 
             // Update search placeholder
             if (extractorSearch) {
-                extractorSearch.placeholder = activeTab === 'secrets' ? 'Search secrets...' : 'Search endpoints...';
+                if (activeTab === 'secrets') {
+                    extractorSearch.placeholder = 'Search secrets...';
+                } else if (activeTab === 'endpoints') {
+                    extractorSearch.placeholder = 'Search endpoints...';
+                } else if (activeTab === 'parameters') {
+                    extractorSearch.placeholder = 'Search parameters...';
+                } else {
+                    extractorSearch.placeholder = 'Search...';
+                }
                 extractorSearch.value = '';
 
                 // Show/hide search based on results existence
-                const hasResults = activeTab === 'secrets' ? currentSecretResults.length > 0 : currentEndpointResults.length > 0;
+                let hasResults = false;
+                if (activeTab === 'secrets') {
+                    hasResults = currentSecretResults.length > 0;
+                } else if (activeTab === 'endpoints') {
+                    hasResults = currentEndpointResults.length > 0;
+                } else if (activeTab === 'parameters') {
+                    hasResults = currentParameterResults.length > 0;
+                }
                 extractorSearchContainer.style.display = hasResults ? 'block' : 'none';
             }
 
-            // Populate domain filter for current tab
-            if (activeTab === 'response-search') {
+            // Populate domain filter for current tab (secrets, endpoints, parameters, response-search)
+            if (activeTab === 'secrets' || activeTab === 'endpoints' || activeTab === 'parameters' || activeTab === 'response-search') {
+                // Reset domain filter to "All Domains" when switching tabs
+                selectedDomain = 'all';
+                if (domainFilter) {
+                    domainFilter.value = 'all';
+                }
+                
+                // Show/hide domain filter based on results
+                let hasResults = false;
+                let resultsToCheck = [];
+                
+                if (activeTab === 'secrets') {
+                    hasResults = currentSecretResults.length > 0;
+                    resultsToCheck = currentSecretResults;
+                } else if (activeTab === 'endpoints') {
+                    hasResults = currentEndpointResults.length > 0;
+                    resultsToCheck = currentEndpointResults;
+                } else if (activeTab === 'parameters') {
+                    hasResults = currentParameterResults.length > 0;
+                    resultsToCheck = currentParameterResults;
+                } else if (activeTab === 'response-search') {
+                    hasResults = currentResponseSearchResults.length > 0;
+                    resultsToCheck = currentResponseSearchResults;
+                }
+                
+                // Count unique domains from results
+                const domainSet = new Set();
+                resultsToCheck.forEach(result => {
+                    const file = result.file || result.sourceFile || result.url || '';
+                    const domain = getDomainFromUrl(file);
+                    if (domain && domain !== 'unknown') {
+                        domainSet.add(domain);
+                    }
+                });
+                
+                // Populate domain filter
                 populateDomainFilter();
+                
+                // Re-apply filter to show all results (since we reset to 'all')
+                if (activeTab === 'secrets') {
+                    const filtered = filterByDomainAndSearch(currentSecretResults);
+                    renderSecretResults(filtered);
+                } else if (activeTab === 'endpoints') {
+                    const filtered = filterByDomainAndSearch(currentEndpointResults);
+                    renderEndpointResults(filtered);
+                } else if (activeTab === 'parameters') {
+                    const filtered = filterByDomainAndSearch(currentParameterResults);
+                    renderParameterResults(filtered, false);
+                } else if (activeTab === 'response-search') {
+                    renderResponseSearchResults(currentResponseSearchResults);
+                }
+                
+                // Show domain filter if there are results and multiple domains
+                if (hasResults && domainSet.size > 1) {
+                    domainFilterContainer.style.display = 'block';
+                } else {
+                    domainFilterContainer.style.display = 'none';
+                }
+            } else {
+                // Hide domain filter for other tabs
+                domainFilterContainer.style.display = 'none';
             }
         });
     });
@@ -102,8 +277,10 @@ export function initExtractorUI() {
             startScanBtn.disabled = true;
             secretsResults.innerHTML = '';
             endpointsResults.innerHTML = '';
+            if (parametersResults) parametersResults.innerHTML = '';
             currentSecretResults = [];
             currentEndpointResults = [];
+            currentParameterResults = [];
             extractorSearchContainer.style.display = 'none';
             domainFilterContainer.style.display = 'none';
             scannedDomains.clear();
@@ -112,12 +289,14 @@ export function initExtractorUI() {
             // Reset pagination
             currentSecretsPage = 1;
             currentEndpointsPage = 1;
+            currentParametersPage = 1;
 
             try {
                 // Lazy load scanners
-                const [secretScanner, endpointExtractor, stateModule] = await Promise.all([
+                const [secretScanner, endpointExtractor, parameterExtractor, stateModule] = await Promise.all([
                     import('./secrets.js'),
                     import('./endpoints.js'),
+                    import('./parameters.js'),
                     import('../../core/state.js')
                 ]);
 
@@ -248,20 +427,75 @@ export function initExtractorUI() {
                         if (content) {
                             const endpoints = endpointExtractor.extractEndpoints(content, req.request.url);
                             currentEndpointResults.push(...endpoints);
+                            
+                            // Extract parameters from the same content
+                            const parameters = parameterExtractor.extractParameters(content, req.request.url);
+                            currentParameterResults.push(...parameters);
                         }
                     } catch (e) {
                         console.error('Error reading file for endpoints:', req.request.url, e);
                     }
                 }
 
+                // Deduplicate endpoints across all requests (same file fetched multiple times)
+                const seenEndpointKeys = new Set();
+                const deduplicatedEndpoints = currentEndpointResults.filter(endpoint => {
+                    // Create unique key: endpoint:method:normalizedFile
+                    const normalizedFile = endpoint.file ? endpoint.file.split('?')[0].split('#')[0] : '';
+                    const key = `${endpoint.endpoint || 'unknown'}:${endpoint.method || 'GET'}:${normalizedFile}`;
+                    if (seenEndpointKeys.has(key)) {
+                        return false; // Duplicate, skip
+                    }
+                    seenEndpointKeys.add(key);
+                    return true;
+                });
+                currentEndpointResults = deduplicatedEndpoints;
+
+                // Deduplicate secrets across all requests (same file fetched multiple times)
+                const seenSecretKeys = new Set();
+                const deduplicatedSecrets = currentSecretResults.filter(secret => {
+                    // Create unique key: type:match:normalizedFile
+                    const normalizedFile = secret.file ? secret.file.split('?')[0].split('#')[0] : '';
+                    const key = `${secret.type || 'unknown'}:${secret.match || ''}:${normalizedFile}`;
+                    if (seenSecretKeys.has(key)) {
+                        return false; // Duplicate, skip
+                    }
+                    seenSecretKeys.add(key);
+                    return true;
+                });
+                currentSecretResults = deduplicatedSecrets;
+
+                // Deduplicate parameters across all requests (same file fetched multiple times)
+                const seenParamKeys = new Set();
+                const deduplicatedParameters = currentParameterResults.filter(param => {
+                    // Create unique key: endpoint:location:name:normalizedFile
+                    const normalizedFile = param.sourceFile ? param.sourceFile.split('?')[0].split('#')[0] : '';
+                    const key = `${param.endpoint || 'unknown'}:${param.location}:${param.name}:${normalizedFile}`;
+                    if (seenParamKeys.has(key)) {
+                        return false; // Duplicate, skip
+                    }
+                    seenParamKeys.add(key);
+                    return true;
+                });
+                currentParameterResults = deduplicatedParameters;
+
                 // Render Results
                 renderSecretResults(currentSecretResults);
                 renderEndpointResults(currentEndpointResults);
+                renderParameterResults(currentParameterResults, false); // false = hide hiddenByDefault params
 
                 // Populate domain filter
                 populateDomainFilter();
+                
+                // Show domain filter if we have results and multiple domains
+                const totalDomains = scannedDomains.size;
+                if (totalDomains > 1) {
+                    domainFilterContainer.style.display = 'block';
+                } else {
+                    domainFilterContainer.style.display = 'none';
+                }
 
-                extractorSearchContainer.style.display = (currentSecretResults.length > 0 || currentEndpointResults.length > 0) ? 'block' : 'none';
+                extractorSearchContainer.style.display = (currentSecretResults.length > 0 || currentEndpointResults.length > 0 || currentParameterResults.length > 0) ? 'block' : 'none';
 
             } catch (e) {
                 console.error('Scan failed:', e);
@@ -285,7 +519,7 @@ export function initExtractorUI() {
         return results.filter(r => {
             // Domain filter
             if (selectedDomain !== 'all') {
-                const domain = getDomainFromUrl(r.file);
+                const domain = getDomainFromUrl(r.file || r.sourceFile || '');
                 if (domain !== selectedDomain) return false;
             }
 
@@ -295,10 +529,16 @@ export function initExtractorUI() {
                     return r.type.toLowerCase().includes(searchTerm) ||
                         r.match.toLowerCase().includes(searchTerm) ||
                         r.file.toLowerCase().includes(searchTerm);
-                } else {
+                } else if (activeTab === 'endpoints') {
                     return r.endpoint.toLowerCase().includes(searchTerm) ||
                         r.method.toLowerCase().includes(searchTerm) ||
                         r.file.toLowerCase().includes(searchTerm);
+                } else if (activeTab === 'parameters') {
+                    return r.name.toLowerCase().includes(searchTerm) ||
+                        (r.endpoint && r.endpoint.toLowerCase().includes(searchTerm)) ||
+                        (r.method && r.method.toLowerCase().includes(searchTerm)) ||
+                        (r.location && r.location.toLowerCase().includes(searchTerm)) ||
+                        (r.sourceFile && r.sourceFile.toLowerCase().includes(searchTerm));
                 }
             }
 
@@ -337,10 +577,22 @@ export function initExtractorUI() {
                 });
             }
         } else {
-            // For secrets and endpoints, use results
-            [...currentSecretResults, ...currentEndpointResults].forEach(result => {
-                const domain = getDomainFromUrl(result.file);
-                domainCounts[domain] = (domainCounts[domain] || 0) + 1;
+            // For secrets, endpoints, and parameters, use results from current tab only
+            let resultsToCount = [];
+            if (activeTab === 'secrets') {
+                resultsToCount = currentSecretResults;
+            } else if (activeTab === 'endpoints') {
+                resultsToCount = currentEndpointResults;
+            } else if (activeTab === 'parameters') {
+                resultsToCount = currentParameterResults;
+            }
+            
+            resultsToCount.forEach(result => {
+                const file = result.file || result.sourceFile || '';
+                const domain = getDomainFromUrl(file);
+                if (domain && domain !== 'unknown') {
+                    domainCounts[domain] = (domainCounts[domain] || 0) + 1;
+                }
             });
         }
 
@@ -381,6 +633,10 @@ export function initExtractorUI() {
                 currentEndpointsPage = 1; // Reset to first page
                 const filtered = filterByDomainAndSearch(currentEndpointResults);
                 renderEndpointResults(filtered);
+            } else if (activeTab === 'parameters') {
+                currentParametersPage = 1; // Reset to first page
+                const filtered = filterByDomainAndSearch(currentParameterResults);
+                renderParameterResults(filtered, false); // false = hide hiddenByDefault params
             } else if (activeTab === 'response-search') {
                 // For response search, filter existing results
                 currentResponseSearchPage = 1; // Reset to first page
@@ -396,12 +652,51 @@ export function initExtractorUI() {
                 currentSecretsPage = 1; // Reset to first page
                 const filtered = filterByDomainAndSearch(currentSecretResults);
                 renderSecretResults(filtered);
-            } else {
+            } else if (activeTab === 'endpoints') {
                 currentEndpointsPage = 1; // Reset to first page
                 const filtered = filterByDomainAndSearch(currentEndpointResults);
                 renderEndpointResults(filtered);
+            } else if (activeTab === 'parameters') {
+                currentParametersPage = 1; // Reset to first page
+                const filtered = filterByDomainAndSearch(currentParameterResults);
+                renderParameterResults(filtered, false); // false = hide hiddenByDefault params
             }
         });
+    }
+
+    // Sort function for secrets
+    function sortSecrets(results, column, direction) {
+        const sorted = [...results];
+        sorted.sort((a, b) => {
+            let aVal, bVal;
+            switch (column) {
+                case 'type':
+                    aVal = (a.type || '').toLowerCase();
+                    bVal = (b.type || '').toLowerCase();
+                    break;
+                case 'match':
+                    aVal = (a.match || '').toLowerCase();
+                    bVal = (b.match || '').toLowerCase();
+                    break;
+                case 'confidence':
+                    aVal = a.confidence || 0;
+                    bVal = b.confidence || 0;
+                    break;
+                case 'file':
+                    aVal = (a.file || '').toLowerCase();
+                    bVal = (b.file || '').toLowerCase();
+                    break;
+                default:
+                    return 0;
+            }
+            if (typeof aVal === 'number') {
+                return direction === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+            if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+        return sorted;
     }
 
     function renderSecretResults(results) {
@@ -412,15 +707,32 @@ export function initExtractorUI() {
             return;
         }
 
+        // Apply sorting
+        let sortedResults = results;
+        if (secretsSort.column) {
+            sortedResults = sortSecrets(results, secretsSort.column, secretsSort.direction);
+        }
+
         // Pagination Logic
-        const totalPages = Math.ceil(results.length / ITEMS_PER_PAGE);
+        const totalPages = Math.ceil(sortedResults.length / ITEMS_PER_PAGE);
         if (currentSecretsPage > totalPages) currentSecretsPage = 1;
 
         const start = (currentSecretsPage - 1) * ITEMS_PER_PAGE;
         const end = start + ITEMS_PER_PAGE;
-        const pageResults = results.slice(start, end);
+        const pageResults = sortedResults.slice(start, end);
 
-        let html = '<table class="secrets-table"><thead><tr><th>Type</th><th>Match</th><th>Confidence</th><th>File</th></tr></thead><tbody>';
+        // Sort indicators
+        const typeSort = secretsSort.column === 'type' ? (secretsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
+        const matchSort = secretsSort.column === 'match' ? (secretsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
+        const confidenceSort = secretsSort.column === 'confidence' ? (secretsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
+        const fileSort = secretsSort.column === 'file' ? (secretsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
+
+        let html = `<table class="secrets-table"><thead><tr>
+            <th class="sortable" data-column="type">Type${typeSort}</th>
+            <th class="sortable" data-column="match">Match${matchSort}</th>
+            <th class="sortable" data-column="confidence">Confidence${confidenceSort}</th>
+            <th class="sortable" data-column="file">File${fileSort}</th>
+        </tr></thead><tbody>`;
         pageResults.forEach(r => {
             const confidenceClass = r.confidence >= 80 ? 'high' : (r.confidence >= 50 ? 'medium' : 'low');
             html += `<tr>
@@ -434,10 +746,61 @@ export function initExtractorUI() {
         secretsResults.innerHTML = html;
 
         // Render Pagination Controls
-        renderPagination(results.length, currentSecretsPage, container, (newPage) => {
+        renderPagination(sortedResults.length, currentSecretsPage, container, (newPage) => {
             currentSecretsPage = newPage;
             renderSecretResults(results);
         });
+
+        // Add sort handlers
+        secretsResults.querySelectorAll('th.sortable').forEach(th => {
+            th.style.cursor = 'pointer';
+            th.addEventListener('click', () => {
+                const column = th.getAttribute('data-column');
+                if (secretsSort.column === column) {
+                    secretsSort.direction = secretsSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    secretsSort.column = column;
+                    secretsSort.direction = 'asc';
+                }
+                currentSecretsPage = 1; // Reset to first page
+                renderSecretResults(results);
+            });
+        });
+    }
+
+    // Sort function for endpoints
+    function sortEndpoints(results, column, direction) {
+        const sorted = [...results];
+        sorted.sort((a, b) => {
+            let aVal, bVal;
+            switch (column) {
+                case 'method':
+                    aVal = (a.method || '').toLowerCase();
+                    bVal = (b.method || '').toLowerCase();
+                    break;
+                case 'endpoint':
+                    aVal = (a.endpoint || '').toLowerCase();
+                    bVal = (b.endpoint || '').toLowerCase();
+                    break;
+                case 'confidence':
+                    aVal = a.confidence || 0;
+                    bVal = b.confidence || 0;
+                    break;
+                case 'file':
+                    aVal = (a.file || '').toLowerCase();
+                    bVal = (b.file || '').toLowerCase();
+                    break;
+                default:
+                    return 0;
+            }
+            if (typeof aVal === 'number') {
+                return direction === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+            if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+        return sorted;
     }
 
     function renderEndpointResults(results) {
@@ -448,15 +811,33 @@ export function initExtractorUI() {
             return;
         }
 
+        // Apply sorting
+        let sortedResults = results;
+        if (endpointsSort.column) {
+            sortedResults = sortEndpoints(results, endpointsSort.column, endpointsSort.direction);
+        }
+
         // Pagination Logic
-        const totalPages = Math.ceil(results.length / ITEMS_PER_PAGE);
+        const totalPages = Math.ceil(sortedResults.length / ITEMS_PER_PAGE);
         if (currentEndpointsPage > totalPages) currentEndpointsPage = 1;
 
         const start = (currentEndpointsPage - 1) * ITEMS_PER_PAGE;
         const end = start + ITEMS_PER_PAGE;
-        const pageResults = results.slice(start, end);
+        const pageResults = sortedResults.slice(start, end);
 
-        let html = '<table class="secrets-table"><thead><tr><th>Method</th><th>Endpoint</th><th>Confidence</th><th>Source File</th><th>Actions</th></tr></thead><tbody>';
+        // Sort indicators
+        const methodSort = endpointsSort.column === 'method' ? (endpointsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
+        const endpointSort = endpointsSort.column === 'endpoint' ? (endpointsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
+        const confidenceSort = endpointsSort.column === 'confidence' ? (endpointsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
+        const fileSort = endpointsSort.column === 'file' ? (endpointsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
+
+        let html = `<table class="secrets-table"><thead><tr>
+            <th class="sortable" data-column="method">Method${methodSort}</th>
+            <th class="sortable" data-column="endpoint">Endpoint${endpointSort}</th>
+            <th class="sortable" data-column="confidence">Confidence${confidenceSort}</th>
+            <th class="sortable" data-column="file">Source File${fileSort}</th>
+            <th>Actions</th>
+        </tr></thead><tbody>`;
         pageResults.forEach((r, index) => {
             const confidenceClass = r.confidence >= 80 ? 'high' : (r.confidence >= 50 ? 'medium' : 'low');
             const methodClass = r.method === 'POST' || r.method === 'PUT' || r.method === 'DELETE' ? 'method-write' : 'method-read';
@@ -483,9 +864,25 @@ export function initExtractorUI() {
         endpointsResults.innerHTML = html;
 
         // Render Pagination Controls
-        renderPagination(results.length, currentEndpointsPage, container, (newPage) => {
+        renderPagination(sortedResults.length, currentEndpointsPage, container, (newPage) => {
             currentEndpointsPage = newPage;
             renderEndpointResults(results);
+        });
+
+        // Add sort handlers
+        endpointsResults.querySelectorAll('th.sortable').forEach(th => {
+            th.style.cursor = 'pointer';
+            th.addEventListener('click', () => {
+                const column = th.getAttribute('data-column');
+                if (endpointsSort.column === column) {
+                    endpointsSort.direction = endpointsSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    endpointsSort.column = column;
+                    endpointsSort.direction = 'asc';
+                }
+                currentEndpointsPage = 1; // Reset to first page
+                renderEndpointResults(results);
+            });
         });
 
         // Add click handlers for copy buttons
@@ -502,6 +899,256 @@ export function initExtractorUI() {
                     btn.innerHTML = originalHTML;
                     btn.style.color = '';
                 }, 1000);
+            });
+        });
+    }
+
+    // Sort function for parameters
+    function sortParameters(results, column, direction) {
+        const sorted = [...results];
+        sorted.sort((a, b) => {
+            let aVal, bVal;
+            switch (column) {
+                case 'parameter':
+                    aVal = (a.name || '').toLowerCase();
+                    bVal = (b.name || '').toLowerCase();
+                    break;
+                case 'location':
+                    aVal = (a.location || '').toLowerCase();
+                    bVal = (b.location || '').toLowerCase();
+                    break;
+                case 'endpoint':
+                    aVal = (a.endpoint || '').toLowerCase();
+                    bVal = (b.endpoint || '').toLowerCase();
+                    break;
+                case 'method':
+                    aVal = (a.method || '').toLowerCase();
+                    bVal = (b.method || '').toLowerCase();
+                    break;
+                case 'risk':
+                    const riskOrder = { high: 3, medium: 2, low: 1 };
+                    aVal = riskOrder[a.riskLevel] || 0;
+                    bVal = riskOrder[b.riskLevel] || 0;
+                    break;
+                case 'confidence':
+                    aVal = a.confidence || 0;
+                    bVal = b.confidence || 0;
+                    break;
+                case 'file':
+                    aVal = ((a.sourceFile || a.file) || '').toLowerCase();
+                    bVal = ((b.sourceFile || b.file) || '').toLowerCase();
+                    break;
+                default:
+                    return 0;
+            }
+            if (typeof aVal === 'number') {
+                return direction === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+            if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+        return sorted;
+    }
+
+    function renderParameterResults(results, showHidden = false) {
+        const container = document.getElementById('parameters-pagination');
+        
+        // Filter by hiddenByDefault if needed
+        let filteredResults = results;
+        if (!showHidden) {
+            filteredResults = results.filter(r => !r.hiddenByDefault);
+        }
+        
+        if (filteredResults.length === 0) {
+            parametersResults.innerHTML = '<div class="empty-state">No parameters found matching your criteria.</div>';
+            if (container) container.style.display = 'none';
+            return;
+        }
+
+        // Group parameters by endpoint
+        const endpointGroups = new Map();
+        filteredResults.forEach(param => {
+            const endpoint = param.endpoint || 'Unknown Endpoint';
+            const method = param.method || 'GET';
+            const groupKey = `${method}:${endpoint}`;
+            
+            if (!endpointGroups.has(groupKey)) {
+                endpointGroups.set(groupKey, {
+                    endpoint: endpoint,
+                    method: method,
+                    sourceFile: param.sourceFile || param.file || '',
+                    params: []
+                });
+            }
+            endpointGroups.get(groupKey).params.push(param);
+        });
+
+        // Convert to array and sort endpoint groups
+        let endpointGroupsArray = Array.from(endpointGroups.values());
+        
+        // Sort endpoint groups if needed
+        if (parametersSort.column === 'endpoint' || parametersSort.column === 'method') {
+            endpointGroupsArray.sort((a, b) => {
+                let aVal, bVal;
+                if (parametersSort.column === 'endpoint') {
+                    aVal = (a.endpoint || '').toLowerCase();
+                    bVal = (b.endpoint || '').toLowerCase();
+                } else {
+                    aVal = (a.method || '').toLowerCase();
+                    bVal = (b.method || '').toLowerCase();
+                }
+                if (aVal < bVal) return parametersSort.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return parametersSort.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        // Sort parameters within each group if needed
+        if (parametersSort.column && parametersSort.column !== 'endpoint' && parametersSort.column !== 'method') {
+            endpointGroupsArray.forEach(group => {
+                group.params = sortParameters(group.params, parametersSort.column, parametersSort.direction);
+            });
+        }
+
+        // Pagination Logic - count endpoints, not individual parameters
+        const totalPages = Math.ceil(endpointGroupsArray.length / ITEMS_PER_PAGE);
+        if (currentParametersPage > totalPages) currentParametersPage = 1;
+
+        const start = (currentParametersPage - 1) * ITEMS_PER_PAGE;
+        const end = start + ITEMS_PER_PAGE;
+        const pageGroups = endpointGroupsArray.slice(start, end);
+
+        // Sort indicators
+        const endpointSort = parametersSort.column === 'endpoint' ? (parametersSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
+        const methodSort = parametersSort.column === 'method' ? (parametersSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
+
+        let html = `<table class="secrets-table parameter-groups-table"><thead><tr>
+            <th class="sortable" data-column="endpoint">Endpoint${endpointSort}</th>
+            <th class="sortable" data-column="method">Method${methodSort}</th>
+            <th>Parameters</th>
+            <th>File</th>
+            <th>Actions</th>
+        </tr></thead><tbody>`;
+        
+        pageGroups.forEach((group, groupIndex) => {
+            const methodClass = group.method === 'POST' || group.method === 'PUT' || group.method === 'DELETE' ? 'method-write' : 'method-read';
+            const fileName = group.sourceFile.split('/').pop() || 'unknown';
+            const groupId = `param-group-${currentParametersPage}-${groupIndex}`;
+            const paramsCount = group.params.length;
+            
+            // Calculate aggregate stats
+            const highRiskCount = group.params.filter(p => p.riskLevel === 'high').length;
+            const avgConfidence = Math.round(group.params.reduce((sum, p) => sum + (p.confidence || 0), 0) / paramsCount);
+            
+            html += `<tr class="endpoint-group-row" data-group-id="${groupId}">
+                <td class="endpoint-expand-cell">
+                    <button class="expand-toggle" data-group-id="${groupId}" aria-label="Expand/collapse">
+                        <svg class="expand-icon" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <path d="M4.5 3L7.5 6L4.5 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <span class="endpoint-path" title="${escapeHtml(group.endpoint)}">${escapeHtml(group.endpoint.length > 50 ? group.endpoint.substring(0, 50) + '...' : group.endpoint)}</span>
+                </td>
+                <td><span class="http-method ${methodClass}">${escapeHtml(group.method)}</span></td>
+                <td>
+                    <span class="params-count">${paramsCount} parameter${paramsCount !== 1 ? 's' : ''}</span>
+                    ${highRiskCount > 0 ? `<span class="high-risk-indicator" title="${highRiskCount} high-risk parameter${highRiskCount !== 1 ? 's' : ''}">⚠️ ${highRiskCount}</span>` : ''}
+                </td>
+                <td class="secret-file"><a href="${escapeHtml(group.sourceFile)}" target="_blank" title="${escapeHtml(group.sourceFile)}">${escapeHtml(fileName)}</a></td>
+                <td>
+                    <button class="copy-curl-btn" data-group-index="${groupIndex}" title="Copy as cURL">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                </td>
+            </tr>`;
+            
+            // Parameter rows (initially hidden)
+            group.params.forEach(param => {
+                const confidenceClass = param.confidence >= 80 ? 'high' : (param.confidence >= 50 ? 'medium' : 'low');
+                const riskClass = param.riskLevel === 'high' ? 'risk-high' : (param.riskLevel === 'medium' ? 'risk-medium' : 'risk-low');
+                const location = param.location || 'unknown';
+                
+                html += `<tr class="parameter-row" data-group-id="${groupId}" style="display: none;">
+                    <td class="parameter-indent">
+                        <span class="parameter-name"><strong>${escapeHtml(param.name)}</strong></span>
+                    </td>
+                    <td>
+                        <span class="location-badge location-${location}">${escapeHtml(location)}</span>
+                    </td>
+                    <td>
+                        <span class="risk-badge ${riskClass}">${escapeHtml(param.riskLevel)}</span>
+                        <span class="confidence-badge ${confidenceClass}">${param.confidence}%</span>
+                    </td>
+                    <td></td>
+                </tr>`;
+            });
+        });
+        
+        html += '</tbody></table>';
+        parametersResults.innerHTML = html;
+
+        // Render Pagination Controls (count endpoints, not parameters)
+        renderPagination(endpointGroupsArray.length, currentParametersPage, container, (newPage) => {
+            currentParametersPage = newPage;
+            renderParameterResults(results, showHidden);
+        });
+
+        // Add expand/collapse handlers
+        parametersResults.querySelectorAll('.expand-toggle').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const groupId = btn.getAttribute('data-group-id');
+                const groupRow = parametersResults.querySelector(`.endpoint-group-row[data-group-id="${groupId}"]`);
+                const paramRows = parametersResults.querySelectorAll(`.parameter-row[data-group-id="${groupId}"]`);
+                const icon = btn.querySelector('.expand-icon');
+                
+                const isExpanded = groupRow.classList.contains('expanded');
+                
+                if (isExpanded) {
+                    // Collapse
+                    groupRow.classList.remove('expanded');
+                    paramRows.forEach(row => row.style.display = 'none');
+                    icon.style.transform = 'rotate(0deg)';
+                } else {
+                    // Expand
+                    groupRow.classList.add('expanded');
+                    paramRows.forEach(row => row.style.display = '');
+                    icon.style.transform = 'rotate(90deg)';
+                }
+            });
+        });
+
+        // Add copy curl handlers
+        parametersResults.querySelectorAll('.copy-curl-btn').forEach((btn, index) => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const groupIndex = parseInt(btn.getAttribute('data-group-index'));
+                const group = pageGroups[groupIndex];
+                
+                if (!group) return;
+                
+                const curlCommand = generateCurlFromParameters(group);
+                await copyToClipboard(curlCommand, btn);
+            });
+        });
+
+        // Add sort handlers
+        parametersResults.querySelectorAll('th.sortable').forEach(th => {
+            th.style.cursor = 'pointer';
+            th.addEventListener('click', () => {
+                const column = th.getAttribute('data-column');
+                if (parametersSort.column === column) {
+                    parametersSort.direction = parametersSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    parametersSort.column = column;
+                    parametersSort.direction = 'asc';
+                }
+                currentParametersPage = 1; // Reset to first page
+                renderParameterResults(results, showHidden);
             });
         });
     }
