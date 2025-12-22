@@ -639,11 +639,12 @@
 
     <!-- Extractor Modal -->
     <div id="extractor-modal" class="modal">
-        <div class="modal-content" style="width: 900px; max-width: 95vw;">
+        <div class="modal-content" style="width: 1200px; max-width: 95vw;">
             <div class="modal-header">
                 <div class="extractor-tabs">
                     <button class="extractor-tab active" data-tab="secrets">Secrets</button>
                     <button class="extractor-tab" data-tab="endpoints">Endpoints</button>
+                    <button class="extractor-tab" data-tab="parameters">Parameters</button>
                     <button class="extractor-tab" data-tab="response-search">Response Search</button>
                 </div>
                 <div id="domain-filter-container" style="margin: 0 10px; display: none;">
@@ -692,6 +693,23 @@
                         style="margin-top: 15px; font-size: 11px; color: #888; border-top: 1px solid var(--border-color); padding-top: 10px;">
                         <strong>Note:</strong> Endpoint extraction uses pattern matching and may include some false
                         positives. Endpoints are sorted by confidence level.
+                    </p>
+                </div>
+
+                <!-- Parameters Tab Content -->
+                <div id="tab-parameters" class="tab-content">
+                    <div id="parameters-results">
+                        <div class="empty-state">No parameters found yet. Click "Scan" to start.</div>
+                    </div>
+                    <div id="parameters-pagination" class="pagination-container" style="display: none;"></div>
+                    <p class="disclaimer-text"
+                        style="margin-top: 15px; font-size: 11px; color: #888; border-top: 1px solid var(--border-color); padding-top: 10px;">
+                        <strong>Note:</strong> Parameter extraction only analyzes JavaScript files from the <strong>current inspected tab</strong>.
+                        Parameters are extracted from request bodies, query strings, headers, and path variables.
+                    </p>
+                    <p class="disclaimer-text"
+                        style="margin-top: 10px; font-size: 11px; color: #888;">
+                        <strong>Disclaimer:</strong> Automated extraction may produce false positives. High-risk parameters (role, admin, debug, etc.) are always shown regardless of confidence.
                     </p>
                 </div>
 

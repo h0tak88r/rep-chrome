@@ -88,12 +88,27 @@ function isInComment(line) {
     return /^\s*\/\//.test(trimmed) || /^\s*\*/.test(trimmed) || /^\s*\/\*/.test(trimmed);
 }
 
+// Normalize source file URL to remove query params and fragments for deduplication
+function normalizeSourceFile(sourceFile) {
+    if (!sourceFile) return sourceFile;
+    try {
+        const url = new URL(sourceFile);
+        // Remove query params and fragments, keep only pathname
+        return `${url.protocol}//${url.host}${url.pathname}`;
+    } catch (e) {
+        // If URL parsing fails, try to remove query params manually
+        return sourceFile.split('?')[0].split('#')[0];
+    }
+}
+
 // Deduplicate results
 function deduplicateResults(results) {
     const seen = new Set();
     return results.filter(result => {
-        // Create a key based on type and match
-        const key = `${result.type}:${result.match}`;
+        // Create a key based on type, match, and normalized file
+        // This prevents duplicates when same file is fetched multiple times
+        const normalizedFile = normalizeSourceFile(result.file || '');
+        const key = `${result.type}:${result.match}:${normalizedFile}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;

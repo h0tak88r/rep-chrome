@@ -77,14 +77,33 @@ rep+ is a lightweight Chrome DevTools extension inspired by Burp Suite's Repeate
 - Response diff view to spot changes between baseline and attempts.
 
 ### Extractors & Search
-- Unified Extractor: secrets and endpoints from captured JS.
-- Secret Scanner: entropy + patterns with confidence scores; pagination and domain filter.
+- Unified Extractor: secrets, endpoints, and parameters from captured JS.
+- **Secret Scanner**: entropy + patterns with confidence scores; pagination and domain filter.
   - Powered by [Kingfisher](https://github.com/mongodb/kingfisher) rules for comprehensive secret detection
   - Supports AWS, GitHub, Google, Slack, Stripe, Twilio, Azure, and many more service providers
   - Rules stored locally in `rules/` directory for offline use
   - **Note**: Secret scanning only analyzes JavaScript files from the **current inspected tab**.
-- Endpoint Extractor: full URLs, relative paths, GraphQL; method detection; one-click copy (rebuilds base URL).
-- Response Search: regex support, match preview, pagination, domain filter.
+  - **Export**: Export all secrets to CSV for analysis and reporting
+- **Endpoint Extractor**: full URLs, relative paths, GraphQL; method detection; one-click copy (rebuilds base URL).
+  - **Export**: Export all endpoints to CSV with method, endpoint path, confidence, and source file
+- **Parameter Extractor**: passive JavaScript parameter discovery with intelligent grouping and risk assessment.
+  - **Parameter Types**: Extracts query, body, header, and path parameters from JavaScript files
+  - **Grouped by Endpoint**: Parameters are organized by endpoint with expandable/collapsible groups
+  - **Risk Classification**: Automatically identifies high-risk parameters (auth, admin, debug flags, IDOR, feature flags)
+  - **Confidence Scoring**: Stricter confidence model than endpoints to reduce false positives
+  - **Smart Filtering**: Suppresses common false positives (webpack, React, jQuery, DOM events, telemetry)
+  - **Copy as cURL**: One-click copy generates curl commands with all parameters properly formatted
+  - **Location Badges**: Visual indicators for parameter location (query/body/header/path)
+  - **Domain Filtering**: Filter parameters by source domain with accurate counts
+  - **Column Sorting**: Sort by parameter name, location, endpoint, method, risk level, or confidence
+  - **Export Options**:
+    - **CSV Export**: Export all parameters with location, endpoint, method, risk level, and confidence
+    - **Postman Collection Export**: Generate ready-to-import Postman collection JSON with all endpoints and parameters
+      - Automatically groups parameters by endpoint
+      - Includes query, body, and header parameters
+      - Uses Postman variable syntax (`{{paramName}}`) for easy testing
+      - Perfect for security testers who want to quickly import discovered APIs into Postman
+- **Response Search**: regex support, match preview, pagination, domain filter.
 
 ### AI Assistance
 - Explain Request (Claude/Gemini) with streaming responses.
@@ -146,33 +165,6 @@ If you use a local model (e.g., Ollama) you must allow Chrome extensions to call
 - **Data**: Stored locally; no tracking/analytics.  
 - **AI**: Your API keys stay local; request/response content is sent only to the provider you choose (Claude/Gemini) when you invoke AI features.
 
-## 🔍 Secret Detection with Kingfisher Rules
-
-rep+ uses [Kingfisher](https://github.com/mongodb/kingfisher) rules for secret detection, providing comprehensive coverage of API keys, tokens, and credentials across hundreds of service providers.
-
-### Supported Services
-
-The secret scanner detects secrets from major services including:
-- **Cloud Providers**: AWS, Azure, Google Cloud
-- **Version Control**: GitHub, GitLab
-- **Communication**: Slack, Twilio
-- **Payment**: Stripe, PayPal, Square
-- **And many more...**
-
-### How It Works
-
-1. **Rule Storage**: Kingfisher rules are stored locally in the `rules/` directory
-2. **Auto-Discovery**: Rules are automatically loaded from YAML files
-3. **Pattern Matching**: Uses PCRE-compatible regex patterns with entropy validation
-4. **Validation**: Checks pattern requirements (min digits, uppercase, lowercase, etc.)
-
-### Limitations
-
-⚠️ **Current Tab Only**: Secret scanning only analyzes JavaScript files from the **current inspected tab**. To scan secrets from multiple tabs, open DevTools on each tab individually and run the scan.
-
-### Adding Custom Rules
-
-To add new secret detection rules, see [CONTRIBUTING.md](CONTRIBUTING.md#adding-kingfisher-rules) for detailed instructions.
 
 ## ⚠️ Limitations
 
