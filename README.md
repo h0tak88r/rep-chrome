@@ -104,6 +104,17 @@ rep+ is a lightweight Chrome DevTools extension inspired by Burp Suite's Repeate
       - Perfect for security testers who want to quickly import discovered APIs into Postman
 - **Response Search**: regex support, match preview, pagination, domain filter.
 
+### Auth Analyzer 🛡️
+- **Header Swapping**: Test for broken access control (IDOR/Privilege Escalation) by automatically replaying requests with a different session's `Cookie` header.
+- **Realtime Analysis**:
+  - **Toggle Control**: Enable/Disable realtime testing on the fly.
+  - **Scope Filtering**: Define specific domains or paths (string or regex) to limit testing scope.
+- **Intelligent Results**:
+  - **Severity Sorting**: Results prioritized by risk: 🔴 **SAME** (Critical), 🟡 **SIMILAR** (Warning), 🟢 **DIFFERENT** (Safe).
+  - **Time Sorting**: Most recent tests appear first.
+  - **Full Visibility**: View full Request URLs and response details in an expandable result view.
+
+
 ### AI Assistance
 
 #### Rep+ AI Assistance (Interactive LLM Chat)
@@ -187,7 +198,9 @@ rep+ is a lightweight Chrome DevTools extension inspired by Burp Suite's Repeate
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/bscript/rep.git
+   ```bash
+   git clone https://github.com/h0tak88r/rep-chrome.git
+   ```
    ```
 2. **Open Chrome Extensions**:
    - Navigate to `chrome://extensions/` in your browser.
