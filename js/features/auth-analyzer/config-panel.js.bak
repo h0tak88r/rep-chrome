@@ -1,0 +1,231 @@
+/**
+ * Auth Analyzer Configuration Panel UI
+ */
+import { state } from '../../core/state.js';
+
+export class AuthAnalyzerConfigPanel {
+    constructor(authAnalyzer) {
+        this.authAnalyzer = authAnalyzer;
+        this.panel = document.getElementById('auth-analyzer-config-panel');
+        this.headerInput = document.getElementById('auth-config-header-input');
+        this.statusText = document.getElementById('auth-config-status-text');
+        this.statusDiv = document.getElementById('auth-config-status');
+        this.isVisible = false;
+
+        this.init();
+    }
+
+    init() {
+        if (!this.panel) {
+            console.error('[Auth Analyzer Config] Panel element not found');
+            return;
+        }
+
+        this.attachEventListeners();
+        this.updateStatus();
+    }
+
+    attachEventListeners() {
+        // Close button
+        const closeBtn = document.getElementById('auth-config-close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.hide());
+        }
+
+        // Save & Enable button
+        const saveBtn = document.getElementById('auth-config-save-btn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => this.saveConfig());
+        }
+
+        // Disable button
+        const disableBtn = document.getElementById('auth-config-disable-btn');
+        if (disableBtn) {
+            disableBtn.addEventListener('click', () => this.disable());
+        }
+
+        // Bulk Replay button
+        const bulkReplayBtn = document.getElementById('auth-bulk-replay-btn');
+        if (bulkReplayBtn) {
+            bulkReplayBtn.addEventListener('click', () => this.bulkReplay());
+        }
+    }
+
+    show() {
+        if (!this.panel) return;
+
+        // Load current config
+        if (this.authAnalyzer.config.swapCookie) {
+            this.headerInput.value = this.authAnalyzer.config.swapCookie;
+        }
+
+        this.updateStatus();
+        this.panel.classList.add('visible');
+        this.isVisible = true;
+
+        // Focus input
+        setTimeout(() => this.headerInput.focus(), 100);
+    }
+
+    hide() {
+        if (!this.panel) return;
+        this.panel.classList.remove('visible');
+        this.isVisible = false;
+    }
+
+    toggle() {
+        if (this.isVisible) {
+            this.hide();
+        } else {
+            this.show();
+        }
+    }
+
+    updateStatus() {
+        const isEnabled = this.authAnalyzer.enabled && this.authAnalyzer.config.swapCookie;
+
+        if (isEnabled) {
+            this.statusDiv.classList.remove('disabled');
+            this.statusDiv.classList.add('enabled');
+            this.statusDiv.querySelector('.auth-config-status-icon').textContent = '🟢';
+            this.statusText.textContent = 'Auth Analyzer is ENABLED and testing';
+
+            // Disable button enabled
+            document.getElementById('auth-config-disable-btn').disabled = false;
+        } else {
+            this.statusDiv.classList.remove('enabled');
+            this.statusDiv.classList.add('disabled');
+            this.statusDiv.querySelector('.auth-config-status-icon').textContent = '⚪';
+            this.statusText.textContent = 'Auth Analyzer is DISABLED';
+
+            // Disable button disabled
+            document.getElementById('auth-config-disable-btn').disabled = true;
+        }
+    }
+
+    saveConfig() {
+        const headerValue = this.headerInput.value ? this.headerInput.value.trim() : '';
+
+        console.log('[Auth Analyzer Config] Saving:', {
+            length: headerValue.length,
+            preview: headerValue.substring(0, 20) + '...'
+        });
+
+        if (headerValue && headerValue !== 'null' && headerValue !== 'undefined') {
+            // Validate format (must contain key=value or :)
+            if (!headerValue.includes('=') && !headerValue.includes(':')) {
+                alert('⚠️ Invalid Header Format!\n\nShould be a Cookie or Header string.\nExample:\nCookie: session=abc123\nOR\nsession=abc123 [will be treated as Cookie]');
+                return;
+            }
+
+            // Clean up if user just pasted a raw cookie value without "Cookie:" prefix
+            // We'll let the replayer handle it, but we store it as is
+
+            this.authAnalyzer.config.swapCookie = headerValue;
+            this.authAnalyzer.start();
+            this.authAnalyzer.storage.saveConfig(this.authAnalyzer.config);
+
+            console.log('[Auth Analyzer Config] Enabled with header');
+            this.updateStatus();
+
+            // Show brief success feedback but don't close immediately so user sees status change
+            const originalText = document.getElementById('auth-config-save-btn').textContent;
+            document.getElementById('auth-config-save-btn').textContent = '✅ Saved!';
+            setTimeout(() => {
+                document.getElementById('auth-config-save-btn').textContent = originalText;
+                this.hide();
+            }, 1000);
+
+        } else {
+            alert('Please enter a valid header value.');
+        }
+    }
+
+    disable() {
+        this.authAnalyzer.config.swapCookie = null;
+        this.authAnalyzer.stop();
+        this.authAnalyzer.storage.saveConfig(this.authAnalyzer.config);
+
+        this.headerInput.value = '';
+        this.updateStatus();
+        console.log('[Auth Analyzer Config] Disabled');
+    }
+
+    async bulkReplay() {
+        if (!this.authAnalyzer.enabled || !this.authAnalyzer.config.swapCookie) {
+            alert('⚠️ Please enable Auth Analyzer first!\n\nConfigure a test cookie in the section above and click "Save & Enable".');
+            return;
+        }
+
+        const hostsInput = document.getElementById('auth-bulk-hosts-input');
+        const statusDiv = document.getElementById('auth-bulk-status');
+        const bulkBtn = document.getElementById('auth-bulk-replay-btn');
+
+        // Get hosts filter
+        const hostsText = hostsInput.value.trim();
+        const hosts = hostsText ? hostsText.split(',').map(h => h.trim().toLowerCase()).filter(h => h) : [];
+
+        // Filter requests
+        const allRequests = state.requests || [];
+        const matchingRequests = hosts.length > 0
+            ? allRequests.filter(req => {
+                const url = req.url || req.request?.url || '';
+                return hosts.some(host => url.toLowerCase().includes(host));
+            })
+            : allRequests;
+
+        if (matchingRequests.length === 0) {
+            alert(`No requests found${hosts.length > 0 ? ' matching: ' + hosts.join(', ') : ''}.\n\nMake sure requests are captured in the left panel.`);
+            return;
+        }
+
+        // Confirm
+        const confirmed = confirm(`Replay ${matchingRequests.length} request(s) with Auth Analyzer?\n\n${hosts.length > 0 ? 'Hosts: ' + hosts.join(', ') : 'All captured requests'}`);
+        if (!confirmed) return;
+
+        // Disable button during processing
+        bulkBtn.disabled = true;
+        bulkBtn.textContent = 'Processing...';
+
+        statusDiv.textContent = `Processing 0/${matchingRequests.length}...`;
+        statusDiv.style.color = '#2196f3';
+
+        let processed = 0;
+        let succeeded = 0;
+        let failed = 0;
+
+        for (const request of matchingRequests) {
+            try {
+                await this.authAnalyzer.processRequest(request);
+                succeeded++;
+            } catch (err) {
+                console.error('[Bulk Replay] Failed:', request.url, err);
+                failed++;
+            }
+
+            processed++;
+            statusDiv.textContent = `Processing ${processed}/${matchingRequests.length} (✓${succeeded} ✗${failed})...`;
+
+            // Small delay to not overwhelm
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        // Done
+        bulkBtn.disabled = false;
+        bulkBtn.textContent = 'Replay Captured Requests';
+        statusDiv.textContent = `✅ Done! Processed: ${processed} | Success: ${succeeded} | Failed: ${failed}`;
+        statusDiv.style.color = '#4caf50';
+
+        console.log(`[Bulk Replay] Complete: ${processed} processed, ${succeeded} succeeded, ${failed} failed`);
+    }
+}
+
+// Global instance
+let configPanelInstance = null;
+
+export function initAuthAnalyzerConfigPanel(authAnalyzer) {
+    if (!configPanelInstance) {
+        configPanelInstance = new AuthAnalyzerConfigPanel(authAnalyzer);
+    }
+    return configPanelInstance;
+}

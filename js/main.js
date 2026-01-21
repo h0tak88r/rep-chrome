@@ -21,6 +21,10 @@ import { setupAIFeatures } from './features/ai/index.js';
 import { setupLLMChat } from './features/llm-chat/index.js';
 import { handleSendRequest } from './network/handler.js';
 import { initSearch } from './search/index.js';
+import { initAuthAnalyzer } from './features/auth-analyzer/index.js';
+import { initAuthAnalyzerPanel } from './features/auth-analyzer/panel.js';
+import { initAuthAnalyzerConfigPanel } from './features/auth-analyzer/config-panel.js';
+import { initAuthAnalyzerComparison } from './features/auth-analyzer/comparison-display.js';
 
 // UI Modules
 import { setupBlockControls } from './ui/block-controls.js';
@@ -46,6 +50,58 @@ document.addEventListener('DOMContentLoaded', () => {
     setupAIFeatures(elements);
     setupLLMChat(elements);
     initSearch();
+
+    // Initialize Auth Analyzer
+    console.log('[Auth Analyzer] Initializing...');
+    const authAnalyzer = initAuthAnalyzer();
+    window.authAnalyzer = authAnalyzer;
+    console.log('[Auth Analyzer] Instance created:', authAnalyzer);
+
+    // Initialize Auth Analyzer Panel
+    const authAnalyzerPanel = initAuthAnalyzerPanel();
+    window.authAnalyzerPanel = authAnalyzerPanel;
+
+    // Setup Auth Analyzer toggle button
+    const authAnalyzerToggleBtn = document.getElementById('auth-analyzer-toggle-btn');
+    const authAnalyzerBadge = document.getElementById('auth-analyzer-badge');
+    if (authAnalyzerToggleBtn) {
+        console.log('[Auth Analyzer] Toggle button found, attaching handler');
+        authAnalyzerToggleBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[Auth Analyzer] Toggle button clicked!');
+            console.log('[Auth Analyzer] Panel object:', authAnalyzerPanel);
+            console.log('[Auth Analyzer] Panel visible:', authAnalyzerPanel?.isVisible);
+
+            if (authAnalyzerPanel) {
+                authAnalyzerPanel.toggle();
+                authAnalyzerToggleBtn.classList.toggle('active', authAnalyzerPanel.isVisible);
+                console.log('[Auth Analyzer] Panel toggled. New state:', authAnalyzerPanel.isVisible);
+            } else {
+                console.error('[Auth Analyzer] Panel object not initialized!');
+            }
+        });
+
+        // Update badge when results are added
+        events.on('AUTH_ANALYZER_RESULT', () => {
+            const criticalCount = authAnalyzerPanel.getCriticalCount();
+            if (criticalCount > 0) {
+                authAnalyzerBadge.textContent = criticalCount;
+                authAnalyzerBadge.style.display = 'inline-block';
+            } else {
+                authAnalyzerBadge.style.display = 'none';
+            }
+        });
+    } else {
+        console.error('[Auth Analyzer] Toggle button NOT FOUND in DOM!');
+    }
+
+    // Initialize Auth Analyzer Configuration Panel
+    const authAnalyzerConfigPanel = initAuthAnalyzerConfigPanel(authAnalyzer);
+    window.authAnalyzerConfigPanel = authAnalyzerConfigPanel;
+
+    // Initialize Auth Analyzer Comparison Display
+    initAuthAnalyzerComparison();
 
     // Promotional Banner
     if (elements.promoBanner && elements.closeBannerBtn) {
@@ -120,19 +176,66 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.sendBtn.addEventListener('click', handleSendRequest);
     }
 
+    // Test with Auth Analyzer button
+    const testAuthBtn = document.getElementById('test-auth-btn');
+    if (testAuthBtn) {
+        testAuthBtn.addEventListener('click', async () => {
+            if (!authAnalyzer.enabled || !authAnalyzer.config.swapCookie) {
+                alert('⚠️ Auth Analyzer not configured!\n\nPlease configure a test cookie first:\nMore (⋮) → Auth Analyzer');
+                return;
+            }
+
+            // Find selected request from DOM
+            const selectedItem = document.querySelector('.request-item.selected');
+            if (!selectedItem) {
+                alert('No request selected');
+                return;
+            }
+
+            const requestIndex = parseInt(selectedItem.dataset.index);
+            const request = state.requests[requestIndex];
+
+            if (!request) {
+                alert('Could not find request data');
+                return;
+            }
+            testAuthBtn.disabled = true;
+            testAuthBtn.textContent = '🔒 Testing...';
+
+            try {
+                await authAnalyzer.processRequest(request);
+                testAuthBtn.textContent = '✅ Done';
+                setTimeout(() => {
+                    testAuthBtn.textContent = '🔒 Test Auth';
+                    testAuthBtn.disabled = false;
+                }, 1500);
+
+                // Show results panel
+                if (authAnalyzerPanel) {
+                    authAnalyzerPanel.show();
+                }
+            } catch (err) {
+                console.error('[Test Auth] Failed:', err);
+                alert('Test failed: ' + err.message);
+                testAuthBtn.textContent = '🔒 Test Auth';
+                testAuthBtn.disabled = false;
+            }
+        });
+    }
+
     // Remove Duplicates Toggle
     if (elements.removeDuplicatesBtn) {
         // Load saved preference (default: true/enabled)
         const removeDuplicatesEnabled = localStorage.getItem('rep_remove_duplicates') !== 'false';
         updateRemoveDuplicatesButton(removeDuplicatesEnabled);
-        
+
         elements.removeDuplicatesBtn.addEventListener('click', () => {
             const currentState = localStorage.getItem('rep_remove_duplicates') !== 'false';
             const newState = !currentState;
-            
+
             localStorage.setItem('rep_remove_duplicates', newState.toString());
             updateRemoveDuplicatesButton(newState);
-            
+
             // If enabling, remove existing duplicates
             if (newState) {
                 const removedCount = actions.request.removeDuplicates();
@@ -144,10 +247,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     function updateRemoveDuplicatesButton(enabled) {
         if (!elements.removeDuplicatesBtn) return;
-        
+
         if (enabled) {
             elements.removeDuplicatesBtn.classList.add('active');
             elements.removeDuplicatesBtn.title = 'Remove duplicate requests (enabled)';
@@ -184,7 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.stopPropagation();
             moreMenu.classList.toggle('hidden');
         });
-        
+
         // Close menu when clicking outside
         document.addEventListener('click', (e) => {
             if (!moreMenu.contains(e.target) && e.target !== moreMenuBtn) {
@@ -204,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     // Close more menu after clicking an item
     if (moreMenu) {
         moreMenu.addEventListener('click', (e) => {
@@ -215,6 +318,24 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // Auth Analyzer Config Button (in More Menu)
+    document.body.addEventListener('click', (e) => {
+        const btn = e.target.closest('#auth-analyzer-btn');
+        if (btn) {
+            console.log('[Auth Analyzer] Config button clicked');
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (window.authAnalyzerConfigPanel) {
+                window.authAnalyzerConfigPanel.show();
+                // Close more menu
+                if (moreMenu) moreMenu.classList.add('hidden');
+            } else {
+                console.error('[Auth Analyzer] Config panel not initialized');
+            }
+        }
+    });
 
     // History Navigation
     // Undo/Redo buttons

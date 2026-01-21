@@ -1,4 +1,5 @@
 // Network Operations
+import { events, EVENT_NAMES } from '../core/events.js';
 
 export function setupNetworkListener(onRequestCaptured) {
     // Get the current page URL once at setup
@@ -23,8 +24,8 @@ export function setupNetworkListener(onRequestCaptured) {
         // Filter out requests sent by rep+ extension (replayed requests)
         // Check if request has our custom header
         if (request.request.headers) {
-            const hasRepPlusHeader = request.request.headers.some(h => 
-                (h.name === 'X-Rep-Plus-Replay' || h.name.toLowerCase() === 'x-rep-plus-replay') && 
+            const hasRepPlusHeader = request.request.headers.some(h =>
+                (h.name === 'X-Rep-Plus-Replay' || h.name.toLowerCase() === 'x-rep-plus-replay') &&
                 h.value === 'true'
             );
             if (hasRepPlusHeader) {
@@ -38,10 +39,10 @@ export function setupNetworkListener(onRequestCaptured) {
         try {
             const urlObj = new URL(request.request.url);
             const hostname = urlObj.hostname.toLowerCase();
-            
+
             // Check if hostname is an extension ID (32 alphanumeric chars)
             // or contains chrome-extension:// scheme
-            if (extensionIdPattern.test(hostname) || 
+            if (extensionIdPattern.test(hostname) ||
                 request.request.url.startsWith('chrome-extension://') ||
                 request.request.url.startsWith('chrome://') ||
                 request.request.url.startsWith('moz-extension://')) {
@@ -76,12 +77,12 @@ export function setupNetworkListener(onRequestCaptured) {
         // Store the page URL that this request belongs to
         // Filter out requests from extension contexts
         const pageUrl = currentPageUrl || request.request.url;
-        
+
         // Skip if pageUrl is from an extension (chrome-extension:// or extension ID hostname)
         try {
             const pageUrlObj = new URL(pageUrl);
             const pageHostname = pageUrlObj.hostname.toLowerCase();
-            if (extensionIdPattern.test(pageHostname) || 
+            if (extensionIdPattern.test(pageHostname) ||
                 pageUrl.startsWith('chrome-extension://') ||
                 pageUrl.startsWith('chrome://') ||
                 pageUrl.startsWith('moz-extension://')) {
@@ -90,11 +91,42 @@ export function setupNetworkListener(onRequestCaptured) {
         } catch (e) {
             // If URL parsing fails, continue
         }
-        
+
         request.pageUrl = pageUrl;
 
         // Fetch response content so we can show it without switching tabs
-        request.getContent((body, encoding) => {
+        // Wrap getContent in a promise with timeout to ensure we don't hang
+        const getContentPromise = new Promise((resolve) => {
+            let resolved = false;
+
+            // Timeout after 1 second
+            const timeoutId = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    // console.warn('getContent timed out for', request.request.url);
+                    resolve({ body: null, encoding: null });
+                }
+            }, 1000);
+
+            try {
+                request.getContent((body, encoding) => {
+                    if (!resolved) {
+                        resolved = true;
+                        clearTimeout(timeoutId);
+                        resolve({ body, encoding });
+                    }
+                });
+            } catch (e) {
+                // console.error('getContent threw error', e);
+                if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeoutId);
+                    resolve({ body: null, encoding: null });
+                }
+            }
+        });
+
+        getContentPromise.then(({ body, encoding }) => {
             const responseStatus = request.response?.status || request.response?.statusCode || '';
             const responseStatusText = request.response?.statusText || '';
             const responseHeaders = request.response?.headers || [];
@@ -109,6 +141,10 @@ export function setupNetworkListener(onRequestCaptured) {
             };
 
             onRequestCaptured(enhancedRequest);
+
+            // Emit event for features that need to process responses (e.g., Auth Analyzer)
+            console.log('[Network Capture] Emitting NETWORK_RESPONSE_RECEIVED for:', enhancedRequest.request.url);
+            events.emit(EVENT_NAMES.NETWORK_RESPONSE_RECEIVED, enhancedRequest);
         });
     });
 }
@@ -203,11 +239,11 @@ export function parseRequest(rawContent, useHttps) {
     filteredHeaders['Cache-Control'] = 'no-cache, no-store, must-revalidate';
     filteredHeaders['Pragma'] = 'no-cache';
     filteredHeaders['Expires'] = '0';
-    
+
     // Remove conditional headers that might cause 304 responses
     delete filteredHeaders['If-None-Match'];
     delete filteredHeaders['If-Modified-Since'];
-    
+
     const options = {
         method: method,
         headers: filteredHeaders,
@@ -230,7 +266,7 @@ export async function executeRequest(url, options) {
         options.headers = {};
     }
     options.headers['X-Rep-Plus-Replay'] = 'true';
-    
+
     const startTime = performance.now();
     const response = await fetch(url, options);
     const endTime = performance.now();
